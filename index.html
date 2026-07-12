@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
-  <title>แผนสุขภาพของเราสองคน</title>
+  <title>แผนของ Papi & Mami</title>
   <meta name="description" content="โปรแกรมสุขภาพและออกกำลังกาย 12 สัปดาห์" />
   <meta name="robots" content="noindex, nofollow" />
   <meta name="theme-color" content="#7C5CFF" />
@@ -29,8 +29,8 @@
       <div class="lock-icon">
         <img src="icons/icon-192.png" width="72" height="72" alt="" />
       </div>
-      <h1 class="lock-title">แผนสุขภาพของเราสองคน</h1>
-      <p class="lock-sub">ใส่รหัสผ่านเพื่อเปิดแผน</p>
+      <h1 class="lock-title">แผนของ Papi & Mami</h1>
+      <p class="lock-sub">ใส่รหัสผ่านเพื่อเปิดแผนของเรา 💞</p>
       <form id="lock-form" autocomplete="off">
         <input id="pass" type="password" inputmode="text" placeholder="รหัสผ่าน"
                autocomplete="current-password" aria-label="รหัสผ่าน" />
@@ -49,12 +49,13 @@
   <div id="app" class="app" hidden>
     <header class="topbar">
       <div class="topbar-inner">
+        <button id="menu-btn" class="icon-btn" type="button" aria-label="แผนเต็มและตั้งค่า">📖</button>
         <div class="brand">
           <span class="brand-title" id="brand-title">แผนของเรา</span>
           <span class="brand-week" id="brand-week">สัปดาห์ 1</span>
         </div>
-        <button id="profile-chip" class="profile-chip" type="button" aria-label="สลับผู้ใช้">
-          <span class="dot"></span><span id="profile-label">ฉัน</span>
+        <button id="profile-chip" class="profile-chip" type="button" aria-label="สลับ Papi/Mami">
+          <span class="dot"></span><span id="profile-label">Papi</span>
         </button>
       </div>
     </header>
