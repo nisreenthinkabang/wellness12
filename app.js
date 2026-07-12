@@ -305,9 +305,11 @@ function viewHome() {
 /* ---------- WORKOUTS ---------- */
 function sessionById(id) { return id === "E" ? null : PLAN.workouts.sessions.find((s) => s.id === id); }
 function exercisesFor(id) {
-  if (id === "E") return PLAN.emergency.exercises.map((e) => ({ emoji: e.emoji, name: e.name, reps: "" }));
+  if (id === "E") return PLAN.emergency.exercises.map((e) => ({ emoji: e.emoji, name: e.name, reps: "40 วินาที" }));
   return sessionById(id).exercises.map((e) => ({ emoji: e.emoji, name: state.mode === "gym" ? e.gym : e.home, reps: e.reps }));
 }
+// จำนวนเซตต่อท่าตามสัปดาห์ (อิงตารางในแผน)
+function setsForWeek(w) { if (w <= 2) return 2; if (w === 8) return 2; if (w === 12) return 2; return 3; }
 function getChecks(id) { const all = store.get("checks", {}); const n = exercisesFor(id).length; let a = all[id]; if (!Array.isArray(a) || a.length !== n) a = new Array(n).fill(false); return a; }
 function setChecks(id, a) { const all = store.get("checks", {}); all[id] = a; store.set("checks", all); }
 
@@ -316,12 +318,13 @@ function viewWorkouts() {
   const exs = exercisesFor(id), checks = getChecks(id);
   const done = checks.filter(Boolean).length, pct = Math.round((done / exs.length) * 100);
   const w = PLAN.workouts;
+  const sets = isE ? null : setsForWeek(state.week);
   const sel = (sid) => `<button class="${state.session === sid ? "on" : ""}" data-act="set-session" data-session="${sid}">${SES[sid].e} ${sid === "E" ? "12′" : sid}</button>`;
 
   const rows = exs.map((e, i) => `
     <button class="ex-row ${checks[i] ? "done" : ""}" data-act="toggle-ex" data-i="${i}">
       <span class="ex-emo">${e.emoji}</span>
-      <span class="ex-body"><span class="ex-name">${esc(e.name)}</span>${e.reps ? `<span class="ex-reps">${esc(e.reps)}</span>` : ""}</span>
+      <span class="ex-body"><span class="ex-name">${esc(e.name)}</span><span class="ex-reps">${isE ? "🔁 2 รอบ × " + esc(e.reps) : `<b>${sets} เซต</b> × ${esc(e.reps)}`}</span></span>
       <span class="ex-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">${ICONS.check}</svg></span>
     </button>`).join("");
 
@@ -335,6 +338,10 @@ function viewWorkouts() {
       <div><div class="wk-name">${isE ? esc(PLAN.emergency.title) : esc(s.name) + " · " + esc(s.focus)}</div>
       <div class="wk-blurb">${esc(isE ? PLAN.emergency.blurb : s.blurb)}</div></div>
     </div>
+
+    <div class="setbar">${isE
+      ? "🔁 " + esc(PLAN.emergency.format)
+      : `📊 สัปดาห์ที่ ${state.week} · ท่าละ <b>${sets} เซต</b>${state.week === 8 ? " · Deload เบาลง 💤" : ""} · พักเซต 60–90 วิ`}</div>
 
     <div class="card">
       ${isE ? `<p class="faint">${esc(PLAN.emergency.warmup)}</p><p class="faint">${esc(PLAN.emergency.format)}</p>` : ""}
