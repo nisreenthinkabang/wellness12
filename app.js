@@ -73,8 +73,10 @@ function ensureWeeklyTokens() {
 
 /* ---------- data accessors ---------- */
 const getLogs = () => store.get("logs", []);
-const getStickers = () => store.get("stickers", { you: 0, partner: 0 });
+// ดาว = จำนวนครั้งที่ออกกำลังกาย (คำนวณจาก logs → ปลอดภัยเวลาซิงก์/merge)
+const getStickers = () => { const L = getLogs(); return { you: L.filter((l) => l.profile === "you").length, partner: L.filter((l) => l.profile === "partner").length }; };
 const getQuests = () => store.get("quests", { you: {}, partner: {} });
+const newId = () => (crypto.randomUUID ? crypto.randomUUID() : "id-" + Date.now() + "-" + Math.floor(Math.random() * 1e9));
 const getLikes = () => store.get("mealLikes", []);
 const workoutCount = (p) => getLogs().filter((l) => l.profile === p).length;
 const emergencyCount = (p) => getLogs().filter((l) => l.profile === p && l.session === "E").length;
@@ -185,6 +187,7 @@ function collectQuest(p, quest, doCelebrate) {
   if (q[p][quest.id]) return false;
   q[p][quest.id] = todayISO(); store.set("quests", q);
   if (doCelebrate) celebrate({ icon: quest.icon, title: quest.title, achiever: p });
+  queueSync();
   return true;
 }
 function syncAutoQuests(p, doCelebrate) {
@@ -608,7 +611,7 @@ function decideFood(dir) {
   if (state.foodIdx >= menus.length) return;
   if (dir === "right") {
     const name = menus[state.foodIdx].name;
-    const likes = getLikes(); if (!likes.includes(name)) { likes.push(name); store.set("mealLikes", likes); }
+    const likes = getLikes(); if (!likes.includes(name)) { likes.push(name); store.set("mealLikes", likes); queueSync(); }
   }
   state.foodIdx++;
   if (getLikes().length >= 3) syncAutoQuests(state.profile, true);
@@ -676,20 +679,19 @@ document.addEventListener("change", (e) => {
 
 function logWorkout() {
   const id = state.session, p = state.profile;
-  const logs = getLogs(); logs.push({ iso: todayISO(), session: id, profile: p, week: currentWeekKey() }); store.set("logs", logs);
-  const st = getStickers(); st[p] = (st[p] || 0) + 1; store.set("stickers", st);
+  const logs = getLogs(); logs.push({ id: newId(), iso: todayISO(), session: id, profile: p, week: currentWeekKey() }); store.set("logs", logs);
   setChecks(id, exercisesFor(id).map(() => false));
   toast("🎉 " + nameOf(p) + " ทำ " + SES[id].l + " สำเร็จ +1 ดาว");
   syncAutoQuests(p, true);
-  render();
+  queueSync(); render();
 }
-function toggleToken(who, i) { const tok = store.get("tokens", { you: [false, false, false], partner: [false, false, false] }); tok[who][i] = !tok[who][i]; store.set("tokens", tok); render(); }
+function toggleToken(who, i) { const tok = store.get("tokens", { you: [false, false, false], partner: [false, false, false] }); tok[who][i] = !tok[who][i]; store.set("tokens", tok); queueSync(); render(); }
 function saveTrack() {
   const val = (id) => { const el = $("#" + id); return el && el.value.trim() ? el.value.trim() : ""; };
-  const entry = { iso: todayISO(), w: val("t-w"), waist: val("t-waist"), steps: val("t-steps"), sleep: val("t-sleep"), faint: val("t-faint") };
+  const entry = { id: newId(), iso: todayISO(), w: val("t-w"), waist: val("t-waist"), steps: val("t-steps"), sleep: val("t-sleep"), faint: val("t-faint") };
   if (!entry.w && !entry.waist && !entry.steps && !entry.sleep && !entry.faint) { toast("กรอกอย่างน้อย 1 ช่อง"); return; }
   const logs = store.get("tracklogs", []); logs.push(entry); store.set("tracklogs", logs);
-  toast("บันทึกแล้ว ✓"); syncAutoQuests(state.profile, true); render();
+  toast("บันทึกแล้ว ✓"); syncAutoQuests(state.profile, true); queueSync(); render();
 }
 function lockNow() { store.del("pass"); PLAN = null; $("#app").hidden = true; $("#lock").style.display = "grid"; $("#pass").value = ""; $("#lock-error").hidden = true; }
 function resetAll() {
@@ -697,6 +699,101 @@ function resetAll() {
   ["profile", "mode", "week", "checks", "logs", "stickers", "tokens", "tokWeek", "tracklogs", "quests", "mealLikes"].forEach(store.del);
   state.profile = "you"; state.mode = "gym"; state.week = 1; state.foodIdx = 0;
   toast("ล้างข้อมูลแล้ว"); render();
+}
+
+/* ============================================================ SYNC (E2E, optional) */
+let supa = null, syncKey = null, syncReady = false, syncPushTimer = null;
+const deviceId = (() => { let d = store.get("deviceId"); if (!d) { d = newId(); store.set("deviceId", d); } return d; })();
+const bufToB64 = (u) => { let s = ""; const a = new Uint8Array(u); for (let i = 0; i < a.length; i++) s += String.fromCharCode(a[i]); return btoa(s); };
+
+async function deriveSyncKey(passcode) {
+  const enc = new TextEncoder();
+  const base = await crypto.subtle.importKey("raw", enc.encode(passcode), "PBKDF2", false, ["deriveKey"]);
+  syncKey = await crypto.subtle.deriveKey({ name: "PBKDF2", salt: enc.encode("w12-sync-v1"), iterations: 250000, hash: "SHA-256" }, base, { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]);
+}
+async function encBlob(obj) {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, syncKey, new TextEncoder().encode(JSON.stringify(obj)));
+  return JSON.stringify({ iv: bufToB64(iv), ct: bufToB64(ct) });
+}
+async function decBlob(str) { const b = JSON.parse(str); const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv: b64ToBuf(b.iv) }, syncKey, b64ToBuf(b.ct)); return JSON.parse(new TextDecoder().decode(pt)); }
+
+function collectShared() {
+  return { logs: getLogs(), tracklogs: store.get("tracklogs", []), quests: getQuests(), mealLikes: getLikes(),
+    tokens: store.get("tokens", { you: [false, false, false], partner: [false, false, false] }), tokWeek: store.get("tokWeek", null) };
+}
+function mergeShared(states) {
+  const logsById = new Map(), tracksById = new Map(), quests = { you: {}, partner: {} }, likes = new Set();
+  const tokens = { you: [false, false, false], partner: [false, false, false] }, wk = currentWeekKey();
+  states.forEach((s) => {
+    if (!s) return;
+    (s.logs || []).forEach((l) => { if (l && l.id) logsById.set(l.id, l); });
+    (s.tracklogs || []).forEach((t) => { if (t && t.id) tracksById.set(t.id, t); });
+    ["you", "partner"].forEach((p) => { const qp = (s.quests || {})[p] || {}; Object.entries(qp).forEach(([id, iso]) => { if (!quests[p][id] || iso < quests[p][id]) quests[p][id] = iso; }); });
+    (s.mealLikes || []).forEach((n) => likes.add(n));
+    if (s.tokWeek === wk && s.tokens) ["you", "partner"].forEach((p) => (s.tokens[p] || []).forEach((v, i) => { if (v) tokens[p][i] = true; }));
+  });
+  const byIso = (a, b) => (a.iso < b.iso ? -1 : a.iso > b.iso ? 1 : 0);
+  return { logs: [...logsById.values()].sort(byIso), tracklogs: [...tracksById.values()].sort(byIso), quests, mealLikes: [...likes], tokens, tokWeek: wk };
+}
+function applyShared(m) {
+  store.set("logs", m.logs); store.set("tracklogs", m.tracklogs); store.set("quests", m.quests);
+  store.set("mealLikes", m.mealLikes); store.set("tokens", m.tokens); store.set("tokWeek", m.tokWeek);
+}
+async function pushState() {
+  if (!supa || !syncKey) return;
+  try { const data = await encBlob(collectShared()); await supa.from("w12sync").upsert({ room: window.W12_CONFIG.room, device: deviceId, updated_at: new Date().toISOString(), data }); } catch {}
+}
+function queueSync() { if (!syncReady) return; clearTimeout(syncPushTimer); syncPushTimer = setTimeout(pushState, 800); }
+async function fetchRemoteStates() {
+  const { data, error } = await supa.from("w12sync").select("device,data").eq("room", window.W12_CONFIG.room);
+  if (error || !data) return [];
+  const out = []; for (const row of data) { try { out.push(await decBlob(row.data)); } catch {} } return out;
+}
+function snapshotKeys() { const L = getLogs(), q = getQuests(); return { logs: new Set(L.map((l) => l.id)), you: new Set(Object.keys(q.you || {})), partner: new Set(Object.keys(q.partner || {})) }; }
+function announcePartner(before) {
+  const partner = other(state.profile), nm = nameOf(partner);
+  const newLogs = getLogs().filter((l) => l.profile === partner && !before.logs.has(l.id));
+  const q = getQuests(), newQ = Object.keys(q[partner] || {}).filter((id) => !before[partner].has(id));
+  if (newLogs.length) { const s = newLogs[newLogs.length - 1].session; toast(`${nm} เพิ่งทำ ${SES[s].l}! 💞`); fireNotify(`${nm} ออกกำลังกายแล้ว ${SES[s].e}`, `${nm} เพิ่งทำ ${SES[s].l} — ส่งใจให้หน่อยน้า!`); }
+  else if (newQ.length) { const qq = PLAN.quests.find((x) => x.id === newQ[newQ.length - 1]); if (qq) { toast(`${nm} เก็บภารกิจ ${qq.title}! ${qq.icon}`); fireNotify(`${nm} เก็บภารกิจได้! ${qq.icon}`, qq.title); } }
+}
+async function pullAndMerge(announce) {
+  if (!supa || !syncKey) return;
+  const before = announce ? snapshotKeys() : null;
+  const remote = await fetchRemoteStates();
+  applyShared(mergeShared([collectShared(), ...remote]));
+  syncAutoQuests("you", false); syncAutoQuests("partner", false);
+  if (announce && before) announcePartner(before);
+  if (!$("#app").hidden) render();
+}
+function subscribeRealtime() {
+  try {
+    supa.channel("w12-" + window.W12_CONFIG.room)
+      .on("postgres_changes", { event: "*", schema: "public", table: "w12sync", filter: "room=eq." + window.W12_CONFIG.room },
+        (payload) => { if (payload.new && payload.new.device !== deviceId) pullAndMerge(true); })
+      .subscribe();
+  } catch {}
+}
+let syncVisBound = false;
+async function initSync(passcode) {
+  const cfg = window.W12_CONFIG || {};
+  if (!cfg.supabaseUrl || !cfg.supabaseAnonKey || !cfg.room) return; // dormant → local only
+  try {
+    await deriveSyncKey(passcode);
+    const mod = await import("https://esm.sh/@supabase/supabase-js@2");
+    supa = mod.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey, { auth: { persistSession: false }, realtime: { params: { eventsPerSecond: 2 } } });
+    syncReady = true;
+    await pullAndMerge(false);
+    await pushState();
+    subscribeRealtime();
+    if (!syncVisBound) { syncVisBound = true; document.addEventListener("visibilitychange", () => { if (!document.hidden && syncReady) pullAndMerge(true); }); }
+  } catch { syncReady = false; }
+}
+function migrate() {
+  let a = false; const L = getLogs(); L.forEach((l) => { if (!l.id) { l.id = newId(); a = true; } }); if (a) store.set("logs", L);
+  let b = false; const T = store.get("tracklogs", []); T.forEach((t) => { if (!t.id) { t.id = newId(); b = true; } }); if (b) store.set("tracklogs", T);
+  store.del("stickers"); // legacy: now derived from logs
 }
 
 /* ============================================================ BOOT */
@@ -707,9 +804,10 @@ function buildTabs() {
 function startApp() {
   $("#lock").style.display = "none"; $("#app").hidden = false;
   state.calSel = todayISO();
+  migrate();
   buildTabs(); render(); scheduleReminder();
 }
-async function tryUnlock(passcode, remember) { PLAN = await decryptContent(passcode); if (remember) store.set("pass", passcode); startApp(); }
+async function tryUnlock(passcode, remember) { PLAN = await decryptContent(passcode); if (remember) store.set("pass", passcode); startApp(); initSync(passcode); }
 
 $("#menu-btn").addEventListener("click", () => { state.tab = "plan"; render(); });
 $("#profile-chip").addEventListener("click", () => { state.profile = other(state.profile); store.set("profile", state.profile); render(); });

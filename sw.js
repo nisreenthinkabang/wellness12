@@ -1,10 +1,11 @@
 /* Service worker: app shell caching + offline (stale-while-revalidate). */
-const CACHE = "w12-v3";
+const CACHE = "w12-v4";
 const ASSETS = [
   "./",
   "index.html",
   "style.css",
   "app.js",
+  "config.js",
   "content.enc.json",
   "manifest.webmanifest",
   "icons/icon-192.png",
