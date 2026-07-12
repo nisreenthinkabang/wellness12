@@ -83,7 +83,14 @@ const emergencyCount = (p) => getLogs().filter((l) => l.profile === p && l.sessi
 function didAllABC(p) { const s = new Set(getLogs().filter((l) => l.profile === p).map((l) => l.session)); return ["A", "B", "C"].every((x) => s.has(x)); }
 function trackCount() { return store.get("tracklogs", []).length; }
 
-const SES = { A: { e: "💪", l: "Workout A" }, B: { e: "🍑", l: "Workout B" }, C: { e: "🔥", l: "Workout C" }, E: { e: "⏱️", l: "ฉุกเฉิน 12′" } };
+// per-person program helpers (V-Taper for Papi / Glute–Waist for Mami) with fallback to old shared shape
+function workoutPlan(profile) { const wp = PLAN.workouts; return (wp && wp[profile] && wp[profile].sessions) ? wp[profile] : wp; }
+function emergencyPlan(profile) { const ep = PLAN.emergency; return (ep && ep[profile]) ? ep[profile] : ep; }
+function sesMeta(profile, id) {
+  if (id === "E") { const e = emergencyPlan(profile) || {}; return { e: e.emoji || "⏱️", l: "ฉุกเฉิน 12′", focus: e.blurb || "" }; }
+  const s = ((workoutPlan(profile) || {}).sessions || []).find((x) => x.id === id) || {};
+  return { e: s.emoji || "💪", l: s.name || ("Workout " + id), focus: s.focus || "" };
+}
 
 /* ---------- praise ---------- */
 const PRAISE = [
@@ -242,7 +249,7 @@ function render() {
 /* ---------- HOME ---------- */
 function recentEvents(n) {
   const ev = [];
-  getLogs().forEach((l) => ev.push({ iso: l.iso, emoji: SES[l.session].e, label: SES[l.session].l, profile: l.profile }));
+  getLogs().forEach((l) => { const mm = sesMeta(l.profile, l.session); ev.push({ iso: l.iso, emoji: mm.e, label: mm.l, profile: l.profile }); });
   const q = getQuests();
   ["you", "partner"].forEach((p) => Object.entries(q[p] || {}).forEach(([id, iso]) => {
     const qq = PLAN.quests.find((x) => x.id === id); if (qq) ev.push({ iso, emoji: qq.icon, label: qq.title, profile: p });
@@ -258,9 +265,9 @@ function viewHome() {
   const collected = (q.you ? Object.keys(q.you).length : 0) + (q.partner ? Object.keys(q.partner).length : 0);
   const feed = recentEvents(5);
 
-  const qtile = (id) => `<button class="qtile" data-act="quick" data-session="${id}">
-      <span class="qk">${SES[id].e}</span><span class="qt">${id === "E" ? "ฉุกเฉิน" : "Workout " + id}</span>
-      <span class="qs">${esc(id === "E" ? "12 นาที" : PLAN.workouts.sessions.find((s) => s.id === id).focus)}</span></button>`;
+  const qtile = (id) => { const mm = sesMeta(p, id); return `<button class="qtile" data-act="quick" data-session="${id}">
+      <span class="qk">${mm.e}</span><span class="qt">${id === "E" ? "ฉุกเฉิน" : "Workout " + id}</span>
+      <span class="qs">${esc(id === "E" ? "12 นาที" : mm.focus)}</span></button>`; };
 
   return `
     <div class="hero">
@@ -287,7 +294,7 @@ function viewHome() {
     </div>
 
     <div class="card tint">
-      <div class="row-between"><span class="muted">แนะนำวันนี้</span><b style="font-size:19px">${SES[sug].e} Workout ${sug}</b></div>
+      <div class="row-between"><span class="muted">แนะนำวันนี้</span><b style="font-size:19px">${sesMeta(p, sug).e} Workout ${sug}</b></div>
       <button class="btn grad block mt" data-act="quick" data-session="${sug}">ไปเริ่มเลย →</button>
     </div>
 
@@ -305,46 +312,52 @@ function viewHome() {
     </div>`;
 }
 
-/* ---------- WORKOUTS ---------- */
-function sessionById(id) { return id === "E" ? null : PLAN.workouts.sessions.find((s) => s.id === id); }
+/* ---------- WORKOUTS (per-person programs; helpers read state.profile) ---------- */
+function sessionById(id) { return id === "E" ? null : ((workoutPlan(state.profile) || {}).sessions || []).find((s) => s.id === id); }
 function exercisesFor(id) {
-  if (id === "E") return PLAN.emergency.exercises.map((e) => ({ emoji: e.emoji, name: e.name, reps: "40 วินาที" }));
-  return sessionById(id).exercises.map((e) => ({ emoji: e.emoji, name: state.mode === "gym" ? e.gym : e.home, reps: e.reps }));
+  if (id === "E") return (emergencyPlan(state.profile).exercises || []).map((e) => ({ emoji: e.emoji, name: e.name, sets: e.sets || "40 วินาที" }));
+  return sessionById(id).exercises.map((e) => ({ emoji: e.emoji, name: state.mode === "gym" ? e.gym : e.home, sets: e.sets || e.reps }));
 }
-// จำนวนเซตต่อท่าตามสัปดาห์ (อิงตารางในแผน)
-function setsForWeek(w) { if (w <= 2) return 2; if (w === 8) return 2; if (w === 12) return 2; return 3; }
-function getChecks(id) { const all = store.get("checks", {}); const n = exercisesFor(id).length; let a = all[id]; if (!Array.isArray(a) || a.length !== n) a = new Array(n).fill(false); return a; }
-function setChecks(id, a) { const all = store.get("checks", {}); all[id] = a; store.set("checks", all); }
+function getChecks(id) { const all = store.get("checks", {}); const k = state.profile + ":" + id; const n = exercisesFor(id).length; let a = all[k]; if (!Array.isArray(a) || a.length !== n) a = new Array(n).fill(false); return a; }
+function setChecks(id, a) { const all = store.get("checks", {}); all[state.profile + ":" + id] = a; store.set("checks", all); }
+// คำแนะนำจำนวนเซตตามสัปดาห์ (คำนวณในแอพ เพราะเก็บฟังก์ชันใน JSON ไม่ได้)
+function weekSetNote(w) {
+  if (w <= 2) return "ทำ 2 เซตทุกท่าก่อน (ค่อย ๆ ไต่ แม้ตารางจะระบุมากกว่า)";
+  if (w === 8) return "Deload — ลดเหลือ 2 เซต/ท่า เบาลง ~30% 💤";
+  if (w === 12) return "เวทเบา + ทดสอบสมรรถภาพ";
+  return "ทำตามจำนวน เซต × ครั้ง ที่ระบุในแต่ละท่า";
+}
 
 function viewWorkouts() {
-  const id = state.session, isE = id === "E", s = sessionById(id);
+  const p = state.profile, id = state.session, isE = id === "E";
+  const prog = workoutPlan(p), w = PLAN.workouts, emg = emergencyPlan(p);
+  const s = sessionById(id);
   const exs = exercisesFor(id), checks = getChecks(id);
   const done = checks.filter(Boolean).length, pct = Math.round((done / exs.length) * 100);
-  const w = PLAN.workouts;
-  const sets = isE ? null : setsForWeek(state.week);
-  const sel = (sid) => `<button class="${state.session === sid ? "on" : ""}" data-act="set-session" data-session="${sid}">${SES[sid].e} ${sid === "E" ? "12′" : sid}</button>`;
+  const sel = (sid) => `<button class="${state.session === sid ? "on" : ""}" data-act="set-session" data-session="${sid}">${sesMeta(p, sid).e} ${sid === "E" ? "12′" : sid}</button>`;
 
   const rows = exs.map((e, i) => `
     <button class="ex-row ${checks[i] ? "done" : ""}" data-act="toggle-ex" data-i="${i}">
       <span class="ex-emo">${e.emoji}</span>
-      <span class="ex-body"><span class="ex-name">${esc(e.name)}</span><span class="ex-reps">${isE ? "🔁 2 รอบ × " + esc(e.reps) : `<b>${sets} เซต</b> × ${esc(e.reps)}`}</span></span>
+      <span class="ex-body"><span class="ex-name">${esc(e.name)}</span><span class="ex-reps">${isE ? "🔁 2 รอบ × " : ""}<b>${esc(e.sets)}</b></span></span>
       <span class="ex-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">${ICONS.check}</svg></span>
     </button>`).join("");
 
   return `
-    <h2 class="section-title">💪 ออกกำลังกาย</h2>
+    <div class="row-between" style="margin:2px 2px 10px"><h2 style="margin:0;font-size:18px">💪 ${esc(prog.programName || "ออกกำลังกาย")}</h2>
+      <span class="chip">${esc(nameOf(p))} ${EMO[p]}</span></div>
     <div class="seg mb">${sel("A")}${sel("B")}${sel("C")}${sel("E")}</div>
     ${isE ? "" : `<div class="seg mb"><button class="${state.mode === "gym" ? "on" : ""}" data-act="set-mode" data-mode="gym">🏋️ ฟิตเนส</button><button class="${state.mode === "home" ? "on" : ""}" data-act="set-mode" data-mode="home">🏠 ที่บ้าน</button></div>`}
 
     <div class="wk-hero ${isE ? "emg" : "s" + id}">
-      <div class="wk-emoji">${isE ? PLAN.emergency.emoji : s.emoji}</div>
-      <div><div class="wk-name">${isE ? esc(PLAN.emergency.title) : esc(s.name) + " · " + esc(s.focus)}</div>
-      <div class="wk-blurb">${esc(isE ? PLAN.emergency.blurb : s.blurb)}</div></div>
+      <div class="wk-emoji">${isE ? emg.emoji : s.emoji}</div>
+      <div><div class="wk-name">${isE ? esc(emg.title) : esc(s.name) + " · " + esc(s.focus)}</div>
+      <div class="wk-blurb">${esc(isE ? emg.blurb : s.blurb)}</div></div>
     </div>
 
-    <div class="setbar">${isE
-      ? "🔁 " + esc(PLAN.emergency.format)
-      : `📊 สัปดาห์ที่ ${state.week} · ท่าละ <b>${sets} เซต</b>${state.week === 8 ? " · Deload เบาลง 💤" : ""} · พักเซต 60–90 วิ`}</div>
+    <div class="setbar">${isE ? "🔁 " + esc(PLAN.emergency.format) : "📊 สัปดาห์ " + state.week + ": " + esc(weekSetNote(state.week))}</div>
+
+    ${(!isE && p === "partner" && prog.preNote) ? `<div class="callout"><span class="ci">🩺</span><div>${esc(prog.preNote)}</div></div>` : ""}
 
     <div class="card">
       ${isE ? `<p class="faint">${esc(PLAN.emergency.warmup)}</p><p class="faint">${esc(PLAN.emergency.format)}</p>` : ""}
@@ -360,7 +373,8 @@ function viewWorkouts() {
 
     <details class="acc"><summary>${esc(w.warmupTitle)} <span class="caret">▾</span></summary><div class="acc-body">${li(w.warmup)}<p class="faint mt">⏳ ${esc(w.rest)}</p></div></details>
     <details class="acc"><summary>${esc(w.progressionTitle)} <span class="caret">▾</span></summary><div class="acc-body">${li(w.progression)}</div></details>
-    <details class="acc"><summary>${esc(w.formCuesTitle)} <span class="caret">▾</span></summary><div class="acc-body">${li(w.formCues)}<div class="linkrow mt">${w.links.map((l) => `<a href="${esc(l.url)}" target="_blank" rel="noopener">🔗 ${esc(l.label)}</a>`).join("")}</div></div></details>`;
+    <details class="acc"><summary>${esc(w.formCuesTitle)} <span class="caret">▾</span></summary><div class="acc-body">${li(w.formCues)}<div class="linkrow mt">${w.links.map((l) => `<a href="${esc(l.url)}" target="_blank" rel="noopener">🔗 ${esc(l.label)}</a>`).join("")}</div></div></details>
+    ${prog.volume ? `<details class="acc"><summary>ปริมาณฝึกเป้าหมาย 📦 <span class="caret">▾</span></summary><div class="acc-body">${li(prog.volume)}${(p === "partner" && prog.period) ? `<hr class="soft"><div class="eyebrow" style="color:var(--partner)">${esc(prog.periodTitle || "วันมีประจำเดือน")}</div><div class="spacer"></div>${li(prog.period, "partner")}` : ""}</div></details>` : ""}`;
 }
 
 /* ---------- FOOD (swipe deck) ---------- */
@@ -431,7 +445,14 @@ function viewFood() {
       <div class="callout mt"><span class="ci">🧀</span><div>${esc(n.tokens.youNote)}</div></div>
       <div class="callout danger mt"><span class="ci">🍺</span><div>${esc(n.tokens.partnerNote)}</div></div>
     </div>
-    <div class="card"><h3>💕 มื้อเดต</h3>${li(n.dateMeals)}</div>
+    ${n.dateMeals ? `<div class="card"><h3>💕 มื้อเดต</h3>${li(n.dateMeals)}</div>` : ""}
+
+    ${n.water ? `<h2 class="section-title">💧 น้ำ & คาเฟอีน</h2><div class="card">${li(n.water)}</div>` : ""}
+
+    ${n.rotation ? `<h2 class="section-title">🗓️ เมนูหมุน 7 วัน</h2>
+    <div class="card"><div class="tbl-wrap"><table class="tbl"><tr><th>วัน</th><th>มื้อแรก</th><th>มื้อเย็น</th><th>ของว่าง</th></tr>${n.rotation.map((r) => `<tr><td>${esc(r.day)}</td><td>${esc(r.m1)}</td><td>${esc(r.m2)}</td><td>${esc(r.snack)}</td></tr>`).join("")}</table></div></div>` : ""}
+
+    ${n.budget ? `<h2 class="section-title">💰 ${esc(n.budgetTitle || "งบต่อวัน")}</h2><div class="card">${li(n.budget)}</div>` : ""}
 
     <h2 class="section-title">🧠 เวลาหิวเพราะเครียด</h2>
     <div class="card">${ol(n.stressSteps)}<p class="faint mt">${esc(n.stressNote)}</p></div>`;
@@ -479,7 +500,7 @@ function viewQuests() {
 function buildEventMap() {
   const map = {};
   const push = (iso, e) => { (map[iso] = map[iso] || []).push(e); };
-  getLogs().forEach((l) => push(l.iso, { emoji: SES[l.session].e, label: SES[l.session].l, profile: l.profile }));
+  getLogs().forEach((l) => { const mm = sesMeta(l.profile, l.session); push(l.iso, { emoji: mm.e, label: mm.l, profile: l.profile }); });
   store.get("tracklogs", []).forEach((t) => push(t.iso, { emoji: "📊", label: "บันทึกผล", profile: null }));
   const q = getQuests();
   ["you", "partner"].forEach((p) => Object.entries(q[p] || {}).forEach(([id, iso]) => {
@@ -546,17 +567,25 @@ function viewCalendar() {
 function viewPlan() {
   const m = PLAN.medical, g = PLAN.goals, s = PLAN.schedule, c = PLAN.cardio, sl = PLAN.sleep, tr = PLAN.tracking, r = PLAN.rules;
   const weeks = s.weeks.map((w) => `<tr><td>${esc(w.wk)}</td><td>${esc(w.weight)}</td><td>${esc(w.cardio)}</td><td>${esc(w.rpe)}</td></tr>`).join("");
-  const sample = s.sampleWeek.map((d) => `<tr><td>${esc(d.day)}</td><td>${esc(d.plan)}</td></tr>`).join("");
+  const sample = s.sampleWeek.map((d) => d.plan !== undefined
+    ? `<tr><td>${esc(d.day)}</td><td colspan="3">${esc(d.plan)}</td></tr>`
+    : `<tr><td>${esc(d.day)}</td><td>${esc(d.you)}</td><td>${esc(d.partner)}</td><td>${esc(d.together)}</td></tr>`).join("");
+  const pr = PLAN.principles;
   const rt = store.get("reminderTime", "18:30");
 
   return `
     <div class="row-between" style="margin:2px 2px 12px"><h2 style="margin:0">📖 แผนเต็ม & ตั้งค่า</h2><button class="btn" data-act="goto" data-tab="home">✕ ปิด</button></div>
 
+    ${pr ? `<h2 class="section-title">🧭 หลักการใช้แผน</h2>
+    <div class="card"><h3>${esc(pr.togetherTitle || "ออกด้วยกัน")}</h3>${li(pr.together)}<p class="faint mt">${esc(pr.togetherNote)}</p>
+      <hr class="soft">${li(pr.flex)}
+      ${pr.rpe ? `<div class="tbl-wrap mt"><table class="tbl"><tr><th>RPE</th><th>ความรู้สึก</th><th>ใช้เมื่อ</th></tr>${pr.rpe.map((x) => `<tr><td>${esc(x.rpe)}</td><td>${esc(x.feel)}</td><td>${esc(x.when)}</td></tr>`).join("")}</table></div><p class="faint mt">${esc(pr.rpeNote)}</p>` : ""}
+    </div>` : ""}
+
     <h2 class="section-title">🗓️ ตาราง 12 สัปดาห์</h2>
     <div class="card"><p class="muted">${esc(s.intro)}</p></div>
-    <div class="card"><div class="tbl-wrap"><table class="tbl"><tr><th>สัปดาห์</th><th>เวท</th><th>คาร์ดิโอ</th><th>หนัก</th></tr>${weeks}</table></div>
-      <div class="callout mt"><span class="ci">🎯</span><div>${esc(s.rpeNote)}</div></div></div>
-    <div class="card"><h3>ตัวอย่างสัปดาห์</h3><div class="tbl-wrap"><table class="tbl">${sample}</table></div><p class="faint mt">${esc(s.sampleNote)}</p></div>
+    <div class="card"><div class="tbl-wrap"><table class="tbl"><tr><th>สัปดาห์</th><th>เวท</th><th>คาร์ดิโอ</th><th>เป้าหมาย</th></tr>${weeks}</table></div></div>
+    <div class="card"><h3>ตัวอย่างสัปดาห์</h3><div class="tbl-wrap"><table class="tbl"><tr><th>วัน</th><th>Papi</th><th>Mami</th><th>ร่วมกัน</th></tr>${sample}</table></div><p class="faint mt">${esc(s.sampleNote)}</p></div>
 
     <h2 class="section-title">🏃 คาร์ดิโอ & ก้าว</h2>
     <div class="card"><div class="eyebrow" style="color:var(--you)">${nameOf("you")} 💜</div><p class="muted" style="margin:4px 0 8px">${esc(c.you.intro)}</p>${li(c.you.items)}<div class="callout mt"><span class="ci">👟</span><div>${esc(c.you.steps)}</div></div></div>
@@ -564,27 +593,31 @@ function viewPlan() {
 
     <h2 class="section-title">⚠️ ก่อนเริ่มฝึกหนัก</h2>
     <div class="card"><p class="muted">${esc(m.intro)}</p></div>
-    <details class="acc" open><summary>สำหรับ Papi <span class="caret">▾</span></summary><div class="acc-body">${li(m.you)}</div></details>
+    <details class="acc" open><summary>สำหรับ Papi <span class="caret">▾</span></summary><div class="acc-body">${li(m.you)}${m.youNote ? `<p class="faint mt">${esc(m.youNote)}</p>` : ""}</div></details>
     <details class="acc" open><summary>สำหรับ Mami <span class="caret">▾</span></summary><div class="acc-body">${li(m.partner, "partner")}<div class="callout mt"><span class="ci">🩺</span><div><b>ก่อนแพทย์ประเมิน Mami ทำได้เฉพาะ:</b></div></div><div class="spacer"></div>${li(m.partnerAllowed, "partner")}<p class="faint mt">${esc(m.earNote)}</p><div class="linkrow mt">${m.links.map((l) => `<a href="${esc(l.url)}" target="_blank" rel="noopener">🔗 ${esc(l.label)}</a>`).join("")}</div></div></details>
+    ${m.danger ? `<div class="callout danger"><span class="ci">🚨</span><div><b>${esc(m.dangerTitle || "หยุดและพบแพทย์ทันทีเมื่อ")}</b><br>${m.danger.map(esc).join(" · ")}</div></div>` : ""}
 
     <h2 class="section-title">🎯 เป้าหมายร่างกาย</h2>
-    <div class="card"><div class="eyebrow" style="color:var(--you)">${nameOf("you")} — ${esc(g.you.now)}</div><div class="spacer"></div>${li(g.you.items)}<p class="faint mt">${esc(g.you.note)}</p></div>
-    <div class="card"><div class="eyebrow" style="color:var(--partner)">${nameOf("partner")} — ${esc(g.partner.now)}</div><div class="spacer"></div>${li(g.partner.items, "partner")}<p class="faint mt">${esc(g.partner.note)}</p></div>
+    <div class="card"><div class="eyebrow" style="color:var(--you)">${esc(g.you.title || nameOf("you"))}</div><div class="faint" style="margin:3px 0 8px">${esc(g.you.now)}</div>${g.you.wants ? `<p class="muted" style="margin-bottom:8px">${esc(g.you.wants)}</p>` : ""}${li(g.you.items)}<p class="faint mt">${esc(g.you.note)}</p></div>
+    <div class="card"><div class="eyebrow" style="color:var(--partner)">${esc(g.partner.title || nameOf("partner"))}</div><div class="faint" style="margin:3px 0 8px">${esc(g.partner.now)}</div>${g.partner.wants ? `<p class="muted" style="margin-bottom:8px">${esc(g.partner.wants)}</p>` : ""}${li(g.partner.items, "partner")}<p class="faint mt">${esc(g.partner.note)}</p></div>
 
     <h2 class="section-title">😴 การนอน</h2>
     <div class="card"><p class="muted">${esc(sl.intro)}</p></div>
     <details class="acc"><summary>สัปดาห์ 1–2 <span class="caret">▾</span></summary><div class="acc-body">${li(sl.week12)}</div></details>
     <details class="acc"><summary>สัปดาห์ 3 เป็นต้นไป <span class="caret">▾</span></summary><div class="acc-body">${li(sl.week3)}</div></details>
+    ${sl.work ? `<details class="acc"><summary>${esc(sl.workTitle || "ระบบงาน")} <span class="caret">▾</span></summary><div class="acc-body">${li(sl.work)}</div></details>` : ""}
+    ${sl.sleepNote ? `<div class="callout"><span class="ci">🩺</span><div>${esc(sl.sleepNote)}</div></div>` : ""}
 
     <h2 class="section-title">📏 วิธีติดตามผล</h2>
     <details class="acc"><summary>ทุกสัปดาห์ <span class="caret">▾</span></summary><div class="acc-body">${li(tr.weekly)}<p class="faint mt">${esc(tr.weeklyNote)}</p></div></details>
     <details class="acc"><summary>ทุก 2 สัปดาห์ <span class="caret">▾</span></summary><div class="acc-body">${li(tr.biweekly)}</div></details>
     <details class="acc"><summary>ทุก 4 สัปดาห์ <span class="caret">▾</span></summary><div class="acc-body">${li(tr.monthly)}<p class="faint mt">${esc(tr.monthlyNote)}</p></div></details>
     <details class="acc"><summary>วิธีปรับอาหาร <span class="caret">▾</span></summary><div class="acc-body"><div class="eyebrow" style="color:var(--you)">${nameOf("you")}</div><div class="spacer"></div>${li(tr.adjustYou)}<div class="spacer"></div><div class="eyebrow" style="color:var(--partner)">${nameOf("partner")}</div><div class="spacer"></div>${li(tr.adjustPartner, "partner")}</div></details>
+    ${tr.logTemplate ? `<div class="card"><h3>📝 แบบบันทึกสั้น</h3><p class="faint" style="white-space:pre-line">${esc(tr.logTemplate)}</p></div>` : ""}
 
     <h2 class="section-title">💞 กติกาคู่รัก</h2>
     <div class="card">${li(r.couple)}</div>
-    <details class="acc"><summary>รางวัลที่ไม่ใช่อาหาร <span class="caret">▾</span></summary><div class="acc-body">${li(r.rewards)}</div></details>
+    <details class="acc"><summary>รางวัลที่ไม่ใช่อาหาร <span class="caret">▾</span></summary><div class="acc-body">${li(r.rewards)}${r.stickerNote ? `<p class="faint mt">${esc(r.stickerNote)}</p>` : ""}</div></details>
     <details class="acc" open><summary>7 วันแรกเริ่มเลย <span class="caret">▾</span></summary><div class="acc-body">${ol(r.first7days)}<div class="callout mt"><span class="ci">📅</span><div>${esc(r.closing)}</div></div></div></details>
 
     <h2 class="section-title">⚙️ ตั้งค่า</h2>
@@ -681,7 +714,7 @@ function logWorkout() {
   const id = state.session, p = state.profile;
   const logs = getLogs(); logs.push({ id: newId(), iso: todayISO(), session: id, profile: p, week: currentWeekKey() }); store.set("logs", logs);
   setChecks(id, exercisesFor(id).map(() => false));
-  toast("🎉 " + nameOf(p) + " ทำ " + SES[id].l + " สำเร็จ +1 ดาว");
+  toast("🎉 " + nameOf(p) + " ทำ " + sesMeta(p, id).l + " สำเร็จ +1 ดาว");
   syncAutoQuests(p, true);
   queueSync(); render();
 }
@@ -755,7 +788,7 @@ function announcePartner(before) {
   const partner = other(state.profile), nm = nameOf(partner);
   const newLogs = getLogs().filter((l) => l.profile === partner && !before.logs.has(l.id));
   const q = getQuests(), newQ = Object.keys(q[partner] || {}).filter((id) => !before[partner].has(id));
-  if (newLogs.length) { const s = newLogs[newLogs.length - 1].session; toast(`${nm} เพิ่งทำ ${SES[s].l}! 💞`); fireNotify(`${nm} ออกกำลังกายแล้ว ${SES[s].e}`, `${nm} เพิ่งทำ ${SES[s].l} — ส่งใจให้หน่อยน้า!`); }
+  if (newLogs.length) { const s = newLogs[newLogs.length - 1].session; const mm = sesMeta(partner, s); toast(`${nm} เพิ่งทำ ${mm.l}! 💞`); fireNotify(`${nm} ออกกำลังกายแล้ว ${mm.e}`, `${nm} เพิ่งทำ ${mm.l} — ส่งใจให้หน่อยน้า!`); }
   else if (newQ.length) { const qq = PLAN.quests.find((x) => x.id === newQ[newQ.length - 1]); if (qq) { toast(`${nm} เก็บภารกิจ ${qq.title}! ${qq.icon}`); fireNotify(`${nm} เก็บภารกิจได้! ${qq.icon}`, qq.title); } }
 }
 async function pullAndMerge(announce) {

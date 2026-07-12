@@ -1,5 +1,5 @@
 /* Service worker: app shell caching + offline (stale-while-revalidate). */
-const CACHE = "w12-v6";
+const CACHE = "w12-v7";
 const ASSETS = [
   "./",
   "index.html",
