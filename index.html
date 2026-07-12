@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+  <title>แผนสุขภาพของเราสองคน</title>
+  <meta name="description" content="โปรแกรมสุขภาพและออกกำลังกาย 12 สัปดาห์" />
+  <meta name="robots" content="noindex, nofollow" />
+  <meta name="theme-color" content="#7C5CFF" />
+
+  <!-- iOS home screen -->
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="แผนของเรา" />
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+  <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png" />
+  <link rel="manifest" href="manifest.webmanifest" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- Lock screen -->
+  <div id="lock" class="lock">
+    <div class="lock-card">
+      <div class="lock-icon">
+        <img src="icons/icon-192.png" width="72" height="72" alt="" />
+      </div>
+      <h1 class="lock-title">แผนสุขภาพของเราสองคน</h1>
+      <p class="lock-sub">ใส่รหัสผ่านเพื่อเปิดแผน</p>
+      <form id="lock-form" autocomplete="off">
+        <input id="pass" type="password" inputmode="text" placeholder="รหัสผ่าน"
+               autocomplete="current-password" aria-label="รหัสผ่าน" />
+        <label class="remember">
+          <input type="checkbox" id="remember" checked />
+          <span>จำรหัสในเครื่องนี้</span>
+        </label>
+        <button type="submit" id="unlock-btn" class="btn-primary">เปิดแผน</button>
+        <p id="lock-error" class="lock-error" hidden>รหัสผ่านไม่ถูกต้อง ลองอีกครั้ง</p>
+      </form>
+      <p class="lock-note">🔒 เนื้อหาถูกเข้ารหัสไว้ ต้องมีรหัสผ่านจึงจะอ่านได้</p>
+    </div>
+  </div>
+
+  <!-- App -->
+  <div id="app" class="app" hidden>
+    <header class="topbar">
+      <div class="topbar-inner">
+        <div class="brand">
+          <span class="brand-title" id="brand-title">แผนของเรา</span>
+          <span class="brand-week" id="brand-week">สัปดาห์ 1</span>
+        </div>
+        <button id="profile-chip" class="profile-chip" type="button" aria-label="สลับผู้ใช้">
+          <span class="dot"></span><span id="profile-label">ฉัน</span>
+        </button>
+      </div>
+    </header>
+
+    <main id="view" class="view" tabindex="-1"></main>
+
+    <nav class="tabbar" id="tabbar" aria-label="เมนูหลัก"></nav>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

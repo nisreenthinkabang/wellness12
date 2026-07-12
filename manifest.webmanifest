@@ -1,0 +1,18 @@
+{
+  "name": "แผนสุขภาพของเราสองคน",
+  "short_name": "แผนของเรา",
+  "description": "โปรแกรมสุขภาพและออกกำลังกาย 12 สัปดาห์",
+  "lang": "th",
+  "dir": "ltr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f7f4fb",
+  "theme_color": "#7c5cff",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
