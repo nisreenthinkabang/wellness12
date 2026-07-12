@@ -12,7 +12,7 @@
    ข้อมูลถูกเข้ารหัสจากเครื่องก่อนส่ง (E2E) Supabase จึงเก็บได้แค่ข้อความที่อ่านไม่ออก
    ============================================================ */
 window.W12_CONFIG = {
-  supabaseUrl: "https://kztuzomcnwnjrcxktmuj.supabase.co",
-  supabaseAnonKey: "sb_publishable_L59s9vOFbPgvohjhJdqPJw_Ti7xLJ2X",
+  supabaseUrl: "https://phuzxiojwfbgwgbxgycm.supabase.co",
+  supabaseAnonKey: "sb_publishable_nOnGU0KODU5WbpOCjZrvYQ_gfXSl-Im",
   room: "89143834-e5de-49c2-9a9a-f9b86ef0254d",
 };
