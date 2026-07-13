@@ -142,27 +142,32 @@ function shareBrag(text) {
   else if (navigator.clipboard) { navigator.clipboard.writeText(text).then(() => toast("คัดลอกข้อความแล้ว ส่งให้แฟนได้เลย 💌")).catch(() => toast(text)); }
   else toast(text);
 }
-function celebrate({ icon, title, achiever }) {
+function celebrate({ icon, title, achiever, kind }) {
+  const isReward = kind === "reward";
   const partnerName = nameOf(other(achiever)), meName = nameOf(achiever);
-  const praise = praiseFor(achiever);
-  const shareText = `${meName} เพิ่งทำสำเร็จ: ${title} ${icon} — ในแผนสุขภาพของเรา! 💞`;
-  fireNotify(`${meName} ทำสำเร็จ! ${icon}`, title);
+  const praise = isReward ? "ปลดล็อกแล้ว! ไปฉลองรางวัลนี้ด้วยกันน้า 🎉" : praiseFor(achiever);
+  const eyebrow = isReward ? "🎁 ปลดล็อกรางวัลของเรา!" : esc(meName) + " เก็บภารกิจได้! 🎊";
+  const praiseFrom = isReward ? "💞 ของเรา" : esc(partnerName);
+  const shareText = isReward
+    ? `เราปลดล็อกรางวัล: ${title} ${icon} 🎉`
+    : `${meName} เพิ่งทำสำเร็จ: ${title} ${icon} — ในแผนสุขภาพของเรา! 💞`;
+  fireNotify(isReward ? `🎁 ปลดล็อกรางวัล! ${icon}` : `${meName} ทำสำเร็จ! ${icon}`, title);
 
   const ov = document.createElement("div");
   ov.className = "cele";
-  const bits = ["🎉", "✨", "💜", "💗", "⭐", "🌟", "🥳", "💪"];
+  const bits = isReward ? ["🎁", "🎉", "✨", "🏆", "⭐", "🌟", "🥳", "💝"] : ["🎉", "✨", "💜", "💗", "⭐", "🌟", "🥳", "💪"];
   const confetti = Array.from({ length: 16 }, (_, i) =>
     `<span class="confo" style="left:${(i * 6.2 + 3).toFixed(1)}%;animation-delay:${(i % 6) * 0.12}s">${bits[i % bits.length]}</span>`).join("");
   ov.innerHTML = `
     <div class="cele-confetti">${confetti}</div>
     <div class="cele-card">
       <div class="cele-icon">${icon}</div>
-      <div class="cele-eyebrow">${esc(meName)} เก็บภารกิจได้! 🎊</div>
+      <div class="cele-eyebrow">${eyebrow}</div>
       <h2 class="cele-title">${esc(title)}</h2>
-      <div class="cele-praise"><span class="pf ${other(achiever) === "partner" ? "partner" : ""}">${esc(partnerName)}</span> ${esc(praise)}</div>
+      <div class="cele-praise"><span class="pf ${(!isReward && other(achiever) === "partner") ? "partner" : ""}">${praiseFrom}</span> ${esc(praise)}</div>
       <div class="cele-btns">
         <button class="btn grad block" data-cele="close">เย้! 🎉</button>
-        <button class="btn block" data-cele="share">อวดให้ ${esc(partnerName)} 💌</button>
+        <button class="btn block" data-cele="share">${isReward ? "บอกอีกฝ่าย 💌" : "อวดให้ " + esc(partnerName) + " 💌"}</button>
       </div>
     </div>`;
   document.body.appendChild(ov);
@@ -176,11 +181,17 @@ function celebrate({ icon, title, achiever }) {
 }
 
 /* ---------- quests ---------- */
+function maxWeekWorkouts(p) {
+  const c = {}; getLogs().filter((l) => l.profile === p).forEach((l) => { const k = l.week || "?"; c[k] = (c[k] || 0) + 1; });
+  return Object.values(c).reduce((mx, v) => Math.max(mx, v), 0);
+}
 function metricMet(p, m) {
   switch (m) {
     case "firstWorkout": return workoutCount(p) >= 1;
     case "variety": return didAllABC(p);
     case "workout3": return workoutCount(p) >= 3;
+    case "workout10": return workoutCount(p) >= 10;
+    case "week80": return maxWeekWorkouts(p) >= 3;
     case "emergency1": return emergencyCount(p) >= 1;
     case "sticker5": return (getStickers()[p] || 0) >= 5;
     case "sticker10": return (getStickers()[p] || 0) >= 10;
@@ -207,6 +218,24 @@ function syncAutoQuests(p, doCelebrate) {
   return any;
 }
 
+/* ---------- rewards (shared unlock tiers from combined progress) ---------- */
+function rewardValue(metric) {
+  if (metric === "workouts") return getLogs().length;                         // เวทรวมของทั้งคู่
+  if (metric === "stickerMax") { const s = getStickers(); return Math.max(s.you || 0, s.partner || 0); }
+  return 0;
+}
+const getRewardsUnlocked = () => store.get("rewardsUnlocked", []);
+function checkRewards(doCelebrate) {
+  const tiers = PLAN.rewardTiers || []; const unlocked = getRewardsUnlocked(); let changed = false;
+  tiers.forEach((t, i) => {
+    if (!unlocked.includes(i) && rewardValue(t.metric) >= t.need) {
+      unlocked.push(i); changed = true;
+      if (doCelebrate) celebrate({ icon: t.icon, title: t.title, achiever: state.profile, kind: "reward" });
+    }
+  });
+  if (changed) { store.set("rewardsUnlocked", unlocked); queueSync(); }
+}
+
 /* ---------- ui helpers ---------- */
 const ICONS = {
   home: '<path d="M3 9.5 12 3l9 6.5V21a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z"/>',
@@ -228,11 +257,17 @@ function li(items, cls = "") { return `<ul class="clean ${cls}">${items.map((t) 
 function ol(items) { return `<ol class="steps">${items.map((t) => `<li>${esc(t)}</li>`).join("")}</ol>`; }
 function weekRowIndex(w) { if (w <= 2) return 0; if (w <= 4) return 1; if (w <= 7) return 2; if (w === 8) return 3; if (w <= 11) return 4; return 5; }
 const clampWeek = (w) => Math.max(1, Math.min(12, w));
+// หลอดความคืบหน้าพร้อมป้ายกำกับ
+function progressRow(label, cur, total, extra) {
+  const pct = total > 0 ? Math.max(0, Math.min(100, (cur / total) * 100)) : 0;
+  return `<div class="prow"><div class="prow-top"><span>${label}</span><span class="prow-num">${cur}/${total}${extra ? " " + extra : ""}</span></div>
+    <div class="progress"><span style="width:${pct}%"></span></div></div>`;
+}
 
 /* ============================================================ RENDER */
 function render() {
   ensureWeeklyTokens();
-  syncAutoQuests("you", false); syncAutoQuests("partner", false);
+  syncAutoQuests("you", false); syncAutoQuests("partner", false); checkRewards(false);
   $("#brand-week").textContent = "สัปดาห์ " + state.week;
   const chip = $("#profile-chip");
   chip.classList.toggle("partner", state.profile === "partner");
@@ -264,6 +299,9 @@ function viewHome() {
   const st = getStickers(); const q = getQuests();
   const collected = (q.you ? Object.keys(q.you).length : 0) + (q.partner ? Object.keys(q.partner).length : 0);
   const feed = recentEvents(5);
+  const wk = currentWeekKey();
+  const thisWeekCount = getLogs().filter((l) => l.profile === p && l.week === wk).length;
+  const myQuests = Object.keys(q[p] || {}).length, totalQ = PLAN.quests.length;
 
   const qtile = (id) => { const mm = sesMeta(p, id); return `<button class="qtile" data-act="quick" data-session="${id}">
       <span class="qk">${mm.e}</span><span class="qt">${id === "E" ? "ฉุกเฉิน" : "Workout " + id}</span>
@@ -279,6 +317,13 @@ function viewHome() {
         <div><b>${collected}</b><span>ภารกิจ 🎯</span></div>
         <div><b>${state.week}/12</b><span>สัปดาห์ 🗓️</span></div>
       </div>
+    </div>
+
+    <div class="card">
+      <div class="eyebrow">ความคืบหน้าของเรา 📊</div><div class="spacer"></div>
+      ${progressRow("🗓️ ตลอด 12 สัปดาห์", state.week, 12, "สัปดาห์")}
+      ${progressRow("💪 เวทสัปดาห์นี้ · " + nameOf(p), thisWeekCount, 3, "ครั้ง")}
+      ${progressRow("🎯 ภารกิจ · " + nameOf(p), myQuests, totalQ)}
     </div>
 
     <div class="card">
@@ -484,14 +529,34 @@ function viewQuests() {
   }).join("");
 
   const doneCount = Object.keys(mine).length;
+  const tiers = PLAN.rewardTiers || [], unlocked = getRewardsUnlocked();
+  const rewardCards = tiers.map((t, i) => {
+    const val = rewardValue(t.metric), got = unlocked.includes(i) || val >= t.need;
+    const pct = Math.min(100, (val / t.need) * 100);
+    return `<div class="reward ${got ? "got" : ""}">
+      <span class="rw-icon">${got ? t.icon : "🔒"}</span>
+      <div class="rw-body"><div class="rw-title">${esc(t.title)}${got ? " ✓" : ""}</div>
+        <div class="rw-desc">${esc(t.desc)}</div>
+        <div class="progress"><span style="width:${pct}%"></span></div></div>
+      <span class="rw-num">${Math.min(val, t.need)}/${t.need}</span></div>`;
+  }).join("");
+
   return `
     <h2 class="section-title">🎯 ภารกิจของ ${esc(nameOf(p))} ${EMO[p]}</h2>
     <div class="card">
       <div class="row-between"><div class="stat"><b>${sc}</b><span class="muted">ดาวสะสม ⭐</span></div>
         <div class="stat"><b>${doneCount}/${PLAN.quests.length}</b><span class="muted">ภารกิจ</span></div></div>
       <div class="stickers mt">${cells}</div>
-      <p class="faint mt center">ครบ 10 ดวง คนที่ครบก่อนได้เลือกกิจกรรมเดต 💞</p>
+      <div class="spacer"></div>
+      ${progressRow("⭐ ดาวชุดถัดไป (ครบ 10 ได้เลือกเดต)", filled, 10, "ดวง")}
+      ${progressRow("🎯 เก็บภารกิจ", doneCount, PLAN.quests.length)}
     </div>
+
+    ${tiers.length ? `<h2 class="section-title">🎁 รางวัลปลดล็อก (ของเราสองคน)</h2>
+    <div class="rewards">${rewardCards}</div>
+    <p class="faint" style="margin:8px 2px 0">นับจากเวทรวมของทั้งคู่ — ยิ่งช่วยกัน ยิ่งปลดเร็ว! 💞</p>` : ""}
+
+    <h2 class="section-title">📋 ภารกิจทั้งหมด</h2>
     <p class="muted" style="margin:0 2px 10px">เก็บทีละขั้น ฉลองด้วยกันทุกครั้งที่ทำได้ — สลับ ${EMO.you}Papi/${EMO.partner}Mami ที่มุมขวาบน</p>
     <div class="quests">${cards}</div>`;
 }
@@ -524,7 +589,7 @@ function viewCalendar() {
     const evs = map[iso] || [];
     const dots = [...new Set(evs.map((e) => e.profile))].map((pr) =>
       `<span class="cdot ${pr === "partner" ? "partner" : pr === "you" ? "" : "neutral"}"></span>`).join("");
-    const emo = evs.slice(0, 2).map((e) => e.emoji).join("");
+    const emo = evs.slice(0, 1).map((e) => e.emoji).join("");
     cells += `<button class="cal-cell ${evs.length ? "has" : ""} ${iso === tISO ? "today" : ""} ${iso === state.calSel ? "sel" : ""}" data-act="cal-day" data-iso="${iso}">
         <span class="cal-num">${d}</span>${emo ? `<span class="cal-emo">${emo}</span>` : ""}<span class="cal-dots">${dots}</span></button>`;
   }
@@ -715,7 +780,7 @@ function logWorkout() {
   const logs = getLogs(); logs.push({ id: newId(), iso: todayISO(), session: id, profile: p, week: currentWeekKey() }); store.set("logs", logs);
   setChecks(id, exercisesFor(id).map(() => false));
   toast("🎉 " + nameOf(p) + " ทำ " + sesMeta(p, id).l + " สำเร็จ +1 ดาว");
-  syncAutoQuests(p, true);
+  syncAutoQuests(p, true); checkRewards(true);
   queueSync(); render();
 }
 function toggleToken(who, i) { const tok = store.get("tokens", { you: [false, false, false], partner: [false, false, false] }); tok[who][i] = !tok[who][i]; store.set("tokens", tok); queueSync(); render(); }
@@ -729,7 +794,7 @@ function saveTrack() {
 function lockNow() { store.del("pass"); PLAN = null; $("#app").hidden = true; $("#lock").style.display = "grid"; $("#pass").value = ""; $("#lock-error").hidden = true; }
 function resetAll() {
   if (!confirm("ล้างข้อมูลความคืบหน้าทั้งหมดในเครื่องนี้?")) return;
-  ["profile", "mode", "week", "checks", "logs", "stickers", "tokens", "tokWeek", "tracklogs", "quests", "mealLikes"].forEach(store.del);
+  ["profile", "mode", "week", "checks", "logs", "stickers", "tokens", "tokWeek", "tracklogs", "quests", "mealLikes", "rewardsUnlocked"].forEach(store.del);
   state.profile = "you"; state.mode = "gym"; state.week = 1; state.foodIdx = 0;
   toast("ล้างข้อมูลแล้ว"); render();
 }
@@ -753,10 +818,11 @@ async function decBlob(str) { const b = JSON.parse(str); const pt = await crypto
 
 function collectShared() {
   return { logs: getLogs(), tracklogs: store.get("tracklogs", []), quests: getQuests(), mealLikes: getLikes(),
-    tokens: store.get("tokens", { you: [false, false, false], partner: [false, false, false] }), tokWeek: store.get("tokWeek", null) };
+    tokens: store.get("tokens", { you: [false, false, false], partner: [false, false, false] }), tokWeek: store.get("tokWeek", null),
+    rewardsUnlocked: getRewardsUnlocked() };
 }
 function mergeShared(states) {
-  const logsById = new Map(), tracksById = new Map(), quests = { you: {}, partner: {} }, likes = new Set();
+  const logsById = new Map(), tracksById = new Map(), quests = { you: {}, partner: {} }, likes = new Set(), rewards = new Set();
   const tokens = { you: [false, false, false], partner: [false, false, false] }, wk = currentWeekKey();
   states.forEach((s) => {
     if (!s) return;
@@ -764,14 +830,16 @@ function mergeShared(states) {
     (s.tracklogs || []).forEach((t) => { if (t && t.id) tracksById.set(t.id, t); });
     ["you", "partner"].forEach((p) => { const qp = (s.quests || {})[p] || {}; Object.entries(qp).forEach(([id, iso]) => { if (!quests[p][id] || iso < quests[p][id]) quests[p][id] = iso; }); });
     (s.mealLikes || []).forEach((n) => likes.add(n));
+    (s.rewardsUnlocked || []).forEach((i) => rewards.add(i));
     if (s.tokWeek === wk && s.tokens) ["you", "partner"].forEach((p) => (s.tokens[p] || []).forEach((v, i) => { if (v) tokens[p][i] = true; }));
   });
   const byIso = (a, b) => (a.iso < b.iso ? -1 : a.iso > b.iso ? 1 : 0);
-  return { logs: [...logsById.values()].sort(byIso), tracklogs: [...tracksById.values()].sort(byIso), quests, mealLikes: [...likes], tokens, tokWeek: wk };
+  return { logs: [...logsById.values()].sort(byIso), tracklogs: [...tracksById.values()].sort(byIso), quests, mealLikes: [...likes], tokens, tokWeek: wk, rewardsUnlocked: [...rewards] };
 }
 function applyShared(m) {
   store.set("logs", m.logs); store.set("tracklogs", m.tracklogs); store.set("quests", m.quests);
   store.set("mealLikes", m.mealLikes); store.set("tokens", m.tokens); store.set("tokWeek", m.tokWeek);
+  if (m.rewardsUnlocked) store.set("rewardsUnlocked", m.rewardsUnlocked);
 }
 async function pushState() {
   if (!supa || !syncKey) return;

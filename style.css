@@ -258,6 +258,22 @@ ol.steps li::before {
 .progress { height: 8px; background: var(--card-2); border-radius: 99px; overflow: hidden; margin: 6px 0 2px; }
 .progress > span { display: block; height: 100%; background: var(--grad); width: 0; transition: width .3s; }
 
+/* labeled progress row */
+.prow { margin: 11px 0; }
+.prow-top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; font-size: 13px; color: var(--ink-soft); margin-bottom: 4px; }
+.prow-num { flex: none; font-weight: 700; color: var(--ink); }
+
+/* reward tiers */
+.rewards { display: grid; gap: 10px; }
+.reward { display: flex; align-items: center; gap: 12px; background: var(--card); border-radius: 15px; padding: 13px 14px; box-shadow: var(--shadow-sm); }
+.reward.got { background: color-mix(in srgb, var(--ok) 13%, var(--card)); }
+.rw-icon { font-size: 26px; flex: none; width: 34px; text-align: center; }
+.rw-body { flex: 1; min-width: 0; }
+.rw-title { font-weight: 600; font-size: 14.5px; }
+.reward.got .rw-title { color: var(--ok); }
+.rw-desc { font-size: 12px; color: var(--ink-soft); margin: 1px 0 7px; }
+.rw-num { flex: none; font-size: 12px; font-weight: 700; color: var(--ink-faint); align-self: flex-start; margin-top: 2px; }
+
 /* stickers */
 .stickers { display: grid; grid-template-columns: repeat(5, 1fr); gap: 9px; margin-top: 4px; }
 .sticker {
@@ -415,16 +431,17 @@ hr.soft { border: none; border-top: 1px solid var(--line); margin: 14px 0; }
 .cal-head button { width: 36px; height: 36px; border-radius: 10px; background: var(--card-2); font-size: 20px; color: var(--ink); }
 .cal-wd { display: grid; grid-template-columns: repeat(7,1fr); gap: 4px; margin-bottom: 6px; }
 .cal-wd span { text-align: center; font-size: 11px; color: var(--ink-faint); font-weight: 600; }
-.cal-grid { display: grid; grid-template-columns: repeat(7,1fr); gap: 4px; }
-.cal-cell { aspect-ratio: 1; border-radius: 10px; background: var(--card-2); display: flex; flex-direction: column;
-  align-items: center; justify-content: flex-start; padding-top: 4px; position: relative; font-size: 12px; color: var(--ink); }
+.cal-grid { display: grid; grid-template-columns: repeat(7,1fr); gap: 3px; }
+.cal-cell { aspect-ratio: 1; min-width: 0; overflow: hidden; box-sizing: border-box; border-radius: 10px; background: var(--card-2); display: flex; flex-direction: column;
+  align-items: center; justify-content: flex-start; padding-top: 3px; position: relative; font-size: 12px; color: var(--ink); }
 .cal-cell.empty { background: transparent; }
 .cal-cell.has { background: var(--grad-soft); }
-.cal-cell.today { outline: 2px solid var(--violet); }
+.cal-cell.today { outline: 2px solid var(--violet); outline-offset: -2px; }
 .cal-cell.sel { background: var(--violet); color: #fff; }
 .cal-num { font-weight: 600; font-size: 12px; }
-.cal-emo { font-size: 13px; line-height: 1; margin-top: 1px; }
-.cal-dots { display: flex; gap: 2px; position: absolute; bottom: 4px; }
+.cal-emo { font-size: 12px; line-height: 1; margin-top: 1px; max-width: 100%; overflow: hidden; }
+.cal-dots { display: flex; gap: 2px; position: absolute; bottom: 3px; }
+.cal-wd { display: grid; grid-template-columns: repeat(7,1fr); gap: 3px; }
 .cdot { width: 6px; height: 6px; border-radius: 50%; background: var(--you); display: inline-block; }
 .cdot.partner { background: var(--partner); }
 .cdot.neutral { background: var(--ink-faint); }
